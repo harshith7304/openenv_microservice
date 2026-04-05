@@ -3,9 +3,9 @@ from openenv.core.env_server.interfaces import Environment as BaseEnvironment
 from openenv.core.env_server.types import State as OpenEnvStateType
 
 try:
-    from ..models import Action, Observation, State
-    from ..tasks import task_easy
-    from ..grader import grade_step
+    from .models import Action, Observation, State
+    from .tasks import task_easy
+    from .grader import grade_step
 except ImportError:
     from models import Action, Observation, State
     from tasks import task_easy
