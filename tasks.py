@@ -1,4 +1,7 @@
-from models import State, ServiceState
+try:
+    from .models import State, ServiceState
+except ImportError:
+    from models import State, ServiceState
 
 def task_easy() -> State:
     return State(

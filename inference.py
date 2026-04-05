@@ -1,9 +1,14 @@
 import os
 import json
 from openai import OpenAI
-from environment import OpenEnv
-from tasks import task_easy, task_medium, task_hard
-from models import Action
+try:
+    from .environment import OpenEnv
+    from .tasks import task_easy, task_medium, task_hard
+    from .models import Action
+except ImportError:
+    from environment import OpenEnv
+    from tasks import task_easy, task_medium, task_hard
+    from models import Action
 
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "fake-key"
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")

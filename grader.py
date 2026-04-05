@@ -1,4 +1,7 @@
-from models import State
+try:
+    from .models import State
+except ImportError:
+    from models import State
 
 def grade_step(state: State, action_is_correct: bool, action_is_incorrect: bool) -> tuple[float, bool]:
     # Evaluate health deterministically based on states
