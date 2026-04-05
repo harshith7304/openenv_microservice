@@ -1,0 +1,40 @@
+from typing import Dict
+from openenv.core import EnvClient
+from openenv.core.client_types import StepResult
+from openenv.core.env_server.types import State as OpenEnvState
+
+try:
+    from .models import Action, Observation
+except ImportError:
+    from models import Action, Observation
+
+class MicroserviceEnv(EnvClient[Action, Observation, OpenEnvState]):
+    """
+    Client for the Microservice Debugging Environment.
+    """
+
+    def _step_payload(self, action: Action) -> Dict:
+        return action.model_dump()
+
+    def _parse_result(self, payload: Dict) -> StepResult[Observation]:
+        obs_data = payload.get("observation", {})
+        observation = Observation(
+            api_response=obs_data.get("api_response"),
+            logs=obs_data.get("logs"),
+            service_status=obs_data.get("service_status", {}),
+            reward=payload.get("reward", 0.0),
+            done=payload.get("done", False),
+            metadata=obs_data.get("metadata", {})
+        )
+
+        return StepResult(
+            observation=observation,
+            reward=payload.get("reward", 0.0),
+            done=payload.get("done", False),
+        )
+
+    def _parse_state(self, payload: Dict) -> OpenEnvState:
+        return OpenEnvState(
+            episode_id=payload.get("episode_id"),
+            step_count=payload.get("step_count", 0),
+        )
