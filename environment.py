@@ -51,10 +51,11 @@ class OpenEnv(BaseEnvironment):
         )
 
     def step(self, action: Action) -> Observation:  # type: ignore[override]
-        self._internal_state.step_count += 1
-        
+        # Auto-initialize if reset() hasn't been called yet
         if self.state_obj is None:
-            return self._get_obs("Error: call reset() first.", "No active episode.", 0.0, True)
+            self.reset()
+
+        self._internal_state.step_count += 1
 
         action_is_correct = False
         action_is_incorrect = False
