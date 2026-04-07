@@ -2,7 +2,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Dict, Optional, Literal, Any
 
 ServiceType = Literal["database", "auth", "payment"]
-ActionType = Literal["call_api", "inspect_logs", "restart_service", "update_config", "check_status"]
+ActionType = Literal[
+    "call_api",
+    "inspect_logs",
+    "restart_service",
+    "update_config",
+    "check_status",
+    "rollback_deployment"
+]
 
 class Action(BaseModel):
     action_type: ActionType
@@ -17,7 +24,7 @@ class Observation(BaseModel):
     api_response: Optional[str] = None
     logs: Optional[str] = None
     service_status: Dict[ServiceType, str]
-    reward: float = 0.0
+    reward: float = 0.01
     done: bool = False
     metadata: Optional[Dict[str, Any]] = None
 

@@ -14,14 +14,14 @@ def grade_step(
 ) -> tuple[float, bool]:
     """
     Deterministic grader with escalating partial rewards.
-    Reward always in [0.0, 1.0].
+    Reward STRICTLY in (0.0, 1.0) — never exactly 0.0 or 1.0.
 
     Reward signal design:
     - Diagnostic actions get escalating rewards based on how many services diagnosed
     - Root cause identification gets a bonus
-    - Incorrect/destructive actions get 0.0
+    - Incorrect/destructive actions get 0.01 (minimum nonzero)
     - Repeated actions get diminishing returns
-    - Full system recovery gets 1.0
+    - Full system recovery gets 0.99 (maximum below 1.0)
     """
 
     # --- Update system health based on current state ---
@@ -60,13 +60,13 @@ def grade_step(
     all_operational = all(s.status == "up" for s in state.services.values())
     done = state.system_health > 0.9 and all_operational
 
-    # --- Compute reward strictly in [0.0, 1.0] ---
+    # --- Compute reward STRICTLY in (0.0, 1.0) ---
     if done:
-        # Full recovery bonus — higher if root cause was identified first
-        reward = 1.0 if root_cause_identified else 0.8
+        # Full recovery — higher if root cause was identified first
+        reward = 0.99 if root_cause_identified else 0.80
     elif action_is_incorrect:
-        # Destructive or useless action
-        reward = 0.0
+        # Destructive or useless action — minimum nonzero penalty
+        reward = 0.01
     elif action_is_correct:
         if is_repeated:
             # Repeated correct action — diminishing returns
@@ -77,9 +77,12 @@ def grade_step(
             base = 0.05 + (num_diagnosed * 0.10)
             # Root cause bonus
             rca_bonus = 0.15 if root_cause_identified else 0.0
-            reward = round(min(base + rca_bonus, 0.7), 2)
+            reward = round(min(base + rca_bonus, 0.70), 2)
     else:
         # Neutral action — minimal signal
-        reward = round(state.system_health * 0.05, 2)
+        reward = max(round(state.system_health * 0.05, 2), 0.01)
+
+    # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) ---
+    reward = max(0.01, min(reward, 0.99))
 
     return reward, done

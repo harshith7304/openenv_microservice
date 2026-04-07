@@ -11,7 +11,7 @@ except ImportError:
     from tasks import task_easy, task_medium, task_hard
     from models import Action
 
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "fake-key"
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 BENCHMARK = "openenv_microservices"
@@ -28,11 +28,12 @@ Available actions (respond ONLY with valid JSON, no explanation):
 - {"action_type": "inspect_logs", "service": "<database|auth|payment>"}
 - {"action_type": "restart_service", "service": "<database|auth|payment>"}
 - {"action_type": "update_config", "service": "database", "key": "url", "value": "valid_db_url"}
+- {"action_type": "rollback_deployment", "service": "database"}
 - {"action_type": "call_api", "service": "<database|auth|payment>", "endpoint": "<optional>"}
 
 Strategy:
 1. First inspect_logs on broken services to identify root cause
-2. Apply the correct fix (update_config OR restart_service)
+2. Apply the correct fix (update_config, rollback_deployment, OR restart_service)
 3. Verify by checking status again
 4. Done when all services are up and system_health > 0.9
 
@@ -57,7 +58,7 @@ def run_task(task_name: str, init_fn):
 
     while not done and step_count < MAX_STEPS:
         step_count += 1
-        reward = 0.0
+        reward = 0.01
         error_msg = "null"
         action_str = "unknown"
 
@@ -88,12 +89,12 @@ def run_task(task_name: str, init_fn):
 
         except Exception as e:
             error_msg = str(e).replace('\n', ' ')[:200]
-            done = False  # don't terminate on parse error
+            done = False
 
         rewards.append(reward)
         print(f"[STEP] step={step_count} action={action_str} reward={reward:.2f} done={str(done).lower()} error={error_msg}", flush=True)
 
-    success = done and any(r >= 1.0 for r in rewards)
+    success = done and any(r >= 0.9 for r in rewards)
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={step_count} rewards={rewards_str}", flush=True)
 

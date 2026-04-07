@@ -17,6 +17,39 @@ TASK_MAP = {
     "task_hard": task_hard,
 }
 
+# --- Deterministic noise lines (NO random module!) ---
+# These are interleaved with core logs to test agent's ability to filter signal from noise.
+NOISE_LINES = {
+    "database": [
+        "INFO: [pg_stat_statements] Background worker auto-vacuum complete.",
+        "WARN: [ConnectionPool] 12% of connections are currently idle.",
+        "INFO: [Backup] Daily snapshot synced to S3 successfully.",
+    ],
+    "auth": [
+        "WARN: [auth] Token cache miss rate 12% over last 5 minutes.",
+        "INFO: [OAuth2] Refreshed signing keys from JWKS endpoint.",
+        "INFO: [SessionManager] Cleaned up 439 orphan sessions.",
+    ],
+    "payment": [
+        "INFO: [StripeWebhook] Received 'charge.succeeded' for evt_x8f9.",
+        "WARN: [FraudDetector] Heuristic rules match rate increased by 2%.",
+        "INFO: [Payouts] Batch settlement completed.",
+    ],
+}
+
+
+def _deterministic_noisy_logs(svc: str, core_log: str) -> str:
+    """Injects plausible noise deterministically (no randomness)."""
+    noise = NOISE_LINES.get(svc, ["INFO: System health check executed."])
+    # Always: first noise line, then core log, then second noise line
+    lines = []
+    if len(noise) > 0:
+        lines.append(noise[0])
+    lines.append(core_log)
+    if len(noise) > 1:
+        lines.append(noise[1])
+    return "\n".join(lines)
+
 
 class OpenEnv(BaseEnvironment):
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
@@ -29,7 +62,7 @@ class OpenEnv(BaseEnvironment):
         self._internal_state = OpenEnvStateType(episode_id=str(uuid4()), step_count=0)
         # --- Session tracking for intelligent grading ---
         self.action_history: list[str] = []
-        self.diagnosed_services: set[str] = set()  # services whose logs have been inspected
+        self.diagnosed_services: set[str] = set()
         self.root_cause_identified: bool = False
 
     def reset(self) -> Observation:
@@ -38,7 +71,7 @@ class OpenEnv(BaseEnvironment):
         self.action_history = []
         self.diagnosed_services = set()
         self.root_cause_identified = False
-        return self._get_obs("Environment reset successfully.", "System initialized.", 0.0, False)
+        return self._get_obs("Environment reset successfully.", "System initialized.", 0.01, False)
 
     def _get_obs(self, api_res: str, logs: str, reward: float, done: bool) -> Observation:
         if self.state_obj:
@@ -81,12 +114,10 @@ class OpenEnv(BaseEnvironment):
         # ============================================================
         if action.action_type == "update_config":
             if action.service == "database" and action.key == "url" and action.value == "valid_db_url":
-                # --- Dependency gate: must have diagnosed root cause first ---
                 if not self.root_cause_identified:
                     action_is_incorrect = True
                     api_res = "Config update applied, but without prior diagnosis this is a blind fix."
                     logs = "WARNING: You updated config without inspecting logs first. SRE protocol violation."
-                    # Still apply the fix, but penalize score
                     self.state_obj.services["database"].config["url"] = "valid_db_url"
                     self.state_obj.services["database"].metrics["latency"] = 10.0
                 else:
@@ -101,14 +132,56 @@ class OpenEnv(BaseEnvironment):
                 logs = f"Expected: database.url=valid_db_url, got: {action.service}.{action.key}={action.value}"
 
         # ============================================================
+        # ACTION: rollback_deployment
+        # ============================================================
+        elif action.action_type == "rollback_deployment":
+            svc = action.service
+            if svc == "database":
+                if not self.root_cause_identified:
+                    action_is_incorrect = True
+                    api_res = "Rollback rejected."
+                    logs = "WARNING: Blind rollback attempted without diagnosing root cause first. SRE protocol violation."
+                else:
+                    self.state_obj.services["database"].config["url"] = "valid_db_url"
+                    self.state_obj.services["database"].metrics["latency"] = 10.0
+                    action_is_correct = True
+                    api_res = "Deployment rolled back to previous stable version."
+                    logs = "Rollback successful. DB config restored to valid_db_url. Latency normalized."
+            else:
+                action_is_incorrect = True
+                api_res = f"Rollback failed for {svc}."
+                logs = f"No previous stable deployment found for {svc}."
+
+        # ============================================================
         # ACTION: restart_service
         # ============================================================
         elif action.action_type == "restart_service":
             svc = action.service
 
-            # --- Dependency enforcement ---
+            # Penalty for restarting a healthy service
+            if svc in self.state_obj.services:
+                svc_state = self.state_obj.services[svc]
+                svc_metrics = svc_state.metrics or {}
+                lat_ok = svc_metrics.get("latency", 0) < 1000
+                err_ok = svc_metrics.get("error_rate", 0) < 0.5
+                url_ok = svc_state.config.get("url", "valid_db_url") == "valid_db_url"
+
+                if svc_state.status == "up" and lat_ok and err_ok and url_ok:
+                    action_is_incorrect = True
+                    api_res = f"400 Bad Request — {svc} is already healthy."
+                    logs = f"WARNING: Restarted healthy service ({svc}). 500 active user sessions dropped!"
+                    reward, done = grade_step(
+                        state=self.state_obj,
+                        action_is_correct=False,
+                        action_is_incorrect=True,
+                        root_cause_identified=self.root_cause_identified,
+                        num_diagnosed=len(self.diagnosed_services),
+                        is_repeated=is_repeated,
+                    )
+                    return self._get_obs(api_res, logs, reward, done)
+
+            # Dependency enforcement
             if svc == "payment":
-                # Payment depends on auth + database
                 auth_up = self.state_obj.services["auth"].status == "up"
                 db_up = self.state_obj.services["database"].status == "up"
                 if not (auth_up and db_up):
@@ -125,7 +198,6 @@ class OpenEnv(BaseEnvironment):
                     logs = "Payment gateway is processing transactions normally."
 
             elif svc == "auth":
-                # Auth depends on database
                 db_url_valid = self.state_obj.services["database"].config.get("url") == "valid_db_url"
                 db_up = self.state_obj.services["database"].status == "up"
                 if not db_url_valid:
@@ -169,32 +241,32 @@ class OpenEnv(BaseEnvironment):
                     action_is_correct = True
                     self.diagnosed_services.add("database")
                     self.root_cause_identified = True
-                    logs = "FATAL: Invalid database URL 'invalid_url_123'. Expected: valid_db_url. All downstream services (auth, payment) are unreachable."
+                    core_log = "FATAL: Invalid database URL 'invalid_url_123'. Expected: valid_db_url. All downstream services (auth, payment) are unreachable."
                 elif svc in ("auth", "payment"):
                     action_is_correct = True
                     self.diagnosed_services.add(svc)
-                    logs = f"ERROR: {svc} cannot connect to database. Connection refused at 'invalid_url_123'. Root cause: database misconfiguration."
+                    core_log = f"ERROR: {svc} cannot connect to database. Connection refused at 'invalid_url_123'. Root cause: database misconfiguration."
                     if "database" not in self.diagnosed_services:
-                        logs += " Hint: inspect database logs first."
+                        core_log += " Hint: inspect database logs first."
                 else:
-                    logs = f"INFO: {svc} logs nominal."
+                    core_log = f"INFO: {svc} logs nominal."
 
             elif self.state_obj.task_name == "task_medium":
                 if svc == "auth":
                     action_is_correct = True
                     self.diagnosed_services.add("auth")
                     self.root_cause_identified = True
-                    logs = "CRITICAL: Auth service crashed — OOM exception. Status=DOWN. Requires restart. Payment is blocked pending auth recovery."
+                    core_log = "CRITICAL: Auth service crashed — OOM exception. Status=DOWN. Requires restart. Payment is blocked pending auth recovery."
                 elif svc == "payment":
                     action_is_correct = True
                     self.diagnosed_services.add("payment")
-                    logs = "ERROR: Payment gateway cannot process — auth dependency is DOWN. Fix auth first."
+                    core_log = "ERROR: Payment gateway cannot process — auth dependency is DOWN. Fix auth first."
                 elif svc == "database":
                     action_is_correct = True
                     self.diagnosed_services.add("database")
-                    logs = "INFO: Database running normally. No errors in last 24h."
+                    core_log = "INFO: Database running normally. No errors in last 24h."
                 else:
-                    logs = f"INFO: {svc} logs nominal."
+                    core_log = f"INFO: {svc} logs nominal."
 
             elif self.state_obj.task_name == "task_hard":
                 if svc == "database":
@@ -202,22 +274,23 @@ class OpenEnv(BaseEnvironment):
                     self.diagnosed_services.add("database")
                     lat = self.state_obj.services["database"].metrics.get("latency", 0)
                     url = self.state_obj.services["database"].config.get("url")
-                    logs = f"WARN: DB query latency={lat}ms (threshold=100ms). Config URL='{url}'. Auth service retry storm detected. ROOT CAUSE: invalid DB URL causing connection pool exhaustion."
+                    core_log = f"WARN: DB query latency={lat}ms (threshold=100ms). Config URL='{url}'. Auth service retry storm detected. ROOT CAUSE: invalid DB URL causing connection pool exhaustion."
                     if "auth" in self.diagnosed_services:
                         self.root_cause_identified = True
                 elif svc == "auth":
                     action_is_correct = True
                     self.diagnosed_services.add("auth")
-                    logs = "ERROR: Auth retry loop — 5000 retries/sec against slow DB. Memory pressure building. Payment gateway timeout cascade imminent."
+                    core_log = "ERROR: Auth retry loop — 5000 retries/sec against slow DB. Memory pressure building. Payment gateway timeout cascade imminent."
                     if "database" in self.diagnosed_services:
                         self.root_cause_identified = True
                 elif svc == "payment":
                     action_is_correct = True
                     self.diagnosed_services.add("payment")
-                    logs = "ERROR: Payment service timeout. All transactions failing. Upstream auth dependency unresponsive."
+                    core_log = "ERROR: Payment service timeout. All transactions failing. Upstream auth dependency unresponsive."
                 else:
-                    logs = f"INFO: {svc} logs nominal."
+                    core_log = f"INFO: {svc} logs nominal."
 
+            logs = _deterministic_noisy_logs(svc, core_log)
             api_res = "Logs retrieved successfully."
 
         # ============================================================
@@ -231,7 +304,6 @@ class OpenEnv(BaseEnvironment):
                 err = self.state_obj.services[svc].metrics.get("error_rate", 0)
                 api_res = f"{svc}: status={st}, latency={lat}ms, error_rate={err}"
                 logs = f"Health check complete for {svc}."
-                # Correct if checking a broken service
                 if st == "down" or lat > 1000 or err > 0.5:
                     action_is_correct = True
             else:
