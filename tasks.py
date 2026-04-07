@@ -5,7 +5,7 @@ except ImportError:
 
 def task_easy() -> State:
     return State(
-        system_health=0.0,
+        system_health=0.01,
         task_name="task_easy",
         services={
             "database": ServiceState(status="down", config={"url": "invalid_url_123"}),

@@ -30,14 +30,14 @@ def grade_step(
             state.services["database"].status = "up"
             state.services["auth"].status = "up"
             state.services["payment"].status = "up"
-            state.system_health = 1.0
+            state.system_health = 0.99
         else:
-            state.system_health = 0.0
+            state.system_health = 0.01
 
     elif state.task_name == "task_medium":
         if state.services["auth"].status == "up":
             state.services["payment"].status = "up"
-            state.system_health = 1.0
+            state.system_health = 0.99
         else:
             state.system_health = 0.3
 
@@ -50,7 +50,7 @@ def grade_step(
             state.services["database"].status = "up"
             state.services["auth"].status = "up"
             state.services["payment"].status = "up"
-            state.system_health = 1.0
+            state.system_health = 0.99
         elif db_url_ok:
             state.system_health = 0.5
         else:

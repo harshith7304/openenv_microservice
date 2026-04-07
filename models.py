@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Dict, Optional, Literal, Any
 
 ServiceType = Literal["database", "auth", "payment"]
@@ -23,10 +23,18 @@ class Observation(BaseModel):
 
     api_response: Optional[str] = None
     logs: Optional[str] = None
-    service_status: Dict[ServiceType, str]
+    service_status: Dict[ServiceType, str] = {}
     reward: float = 0.01
     done: bool = False
     metadata: Optional[Dict[str, Any]] = None
+
+    @field_validator("reward", mode="after")
+    @classmethod
+    def clamp_reward(cls, v: float) -> float:
+        """Ensure reward is STRICTLY in (0, 1) — never 0.0 or 1.0."""
+        if v is None:
+            return 0.01
+        return max(0.01, min(float(v), 0.99))
 
 class ServiceState(BaseModel):
     status: str = "up"
