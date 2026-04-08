@@ -51,13 +51,21 @@ def _deterministic_noisy_logs(svc: str, core_log: str) -> str:
     return "\n".join(lines)
 
 
+from openenv.core.rubrics import Rubric
+
+class HackathonGrader(Rubric):
+    def forward(self, action: Action, observation: Observation) -> float:
+        return observation.reward
+
 class OpenEnv(BaseEnvironment):
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self, init_state_fn=None):
+        super().__init__()
         if init_state_fn is None:
             init_state_fn = task_easy
         self.init_state_fn = init_state_fn
+        self.rubric = HackathonGrader()
         self.state_obj = None
         self._internal_state = OpenEnvStateType(episode_id=str(uuid4()), step_count=0)
         # --- Session tracking for intelligent grading ---
