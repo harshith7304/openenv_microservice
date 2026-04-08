@@ -77,12 +77,13 @@ def grade_step(
             base = 0.05 + (num_diagnosed * 0.10)
             # Root cause bonus
             rca_bonus = 0.15 if root_cause_identified else 0.0
-            reward = round(min(base + rca_bonus, 0.70), 2)
+            reward = min(base + rca_bonus, 0.70)
     else:
         # Neutral action — minimal signal
-        reward = max(round(state.system_health * 0.05, 2), 0.01)
+        reward = max(state.system_health * 0.05, 1e-6)
 
     # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) ---
-    reward = max(0.01, min(reward, 0.99))
+    EPS = 1e-6
+    reward = max(EPS, min(reward, 1.0 - EPS))
 
     return reward, done
