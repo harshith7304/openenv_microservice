@@ -24,7 +24,7 @@ class Observation(BaseModel):
     api_response: Optional[str] = None
     logs: Optional[str] = None
     service_status: Dict[ServiceType, str] = {}
-    reward: float = 0.01
+    reward: float = 0.1
     done: bool = False
     metadata: Optional[Dict[str, Any]] = None
 
@@ -32,7 +32,7 @@ class Observation(BaseModel):
     @classmethod
     def clamp_reward(cls, v: float) -> float:
         """Ensure reward is STRICTLY in (0, 1) — never 0.0 or 1.0."""
-        EPS = 0.01
+        EPS = 0.1
         if v is None:
             return EPS
         return max(EPS, min(float(v), 0.99))

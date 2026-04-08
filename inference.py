@@ -59,7 +59,7 @@ def run_task(task_name: str, init_fn):
 
     while not done and step_count < MAX_STEPS:
         step_count += 1
-        reward = 0.01
+        reward = 0.1
         error_msg = "null"
         action_str = "unknown"
 

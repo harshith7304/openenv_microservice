@@ -32,7 +32,7 @@ def grade_step(
             state.services["payment"].status = "up"
             state.system_health = 0.99
         else:
-            state.system_health = 0.01
+            state.system_health = 0.1
 
     elif state.task_name == "task_medium":
         if state.services["auth"].status == "up":
@@ -66,7 +66,7 @@ def grade_step(
         reward = 0.99 if root_cause_identified else 0.80
     elif action_is_incorrect:
         # Destructive or useless action — minimum nonzero penalty
-        reward = 0.01
+        reward = 0.1
     elif action_is_correct:
         if is_repeated:
             # Repeated correct action — diminishing returns
@@ -83,7 +83,7 @@ def grade_step(
         reward = max(state.system_health * 0.05, 1e-6)
 
     # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) ---
-    EPS = 0.01
+    EPS = 0.1
     reward = max(EPS, min(reward, 0.99))
 
     return reward, done
