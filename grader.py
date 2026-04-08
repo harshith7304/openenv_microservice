@@ -80,10 +80,10 @@ def grade_step(
             reward = min(base + rca_bonus, 0.70)
     else:
         # Neutral action — minimal signal
-        reward = max(state.system_health * 0.05, 1e-6)
+        reward = max(state.system_health * 0.05, 0.01)
 
     # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) ---
-    EPS = 1e-6
-    reward = max(EPS, min(reward, 1.0 - EPS))
+    EPS = 0.01
+    reward = round(max(EPS, min(reward, 0.99)), 2)
 
     return reward, done

@@ -19,10 +19,10 @@ class MicroserviceEnv(EnvClient[Action, Observation, OpenEnvState]):
     def _parse_result(self, payload: Dict) -> StepResult[Observation]:
         obs_data = payload.get("observation", {})
         # Clamp reward to strict (0, 1) range
-        raw_reward = payload.get("reward", 0.1)
+        raw_reward = payload.get("reward", 0.01)
         if raw_reward is None:
-            raw_reward = 0.1
-        clamped_reward = max(0.1, min(float(raw_reward), 0.9))
+            raw_reward = 0.01
+        clamped_reward = max(0.01, min(float(raw_reward), 0.99))
 
         observation = Observation(
             api_response=obs_data.get("api_response"),

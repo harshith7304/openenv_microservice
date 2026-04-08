@@ -71,7 +71,7 @@ class OpenEnv(BaseEnvironment):
         self.action_history = []
         self.diagnosed_services = set()
         self.root_cause_identified = False
-        return self._get_obs("Environment reset successfully.", "System initialized.", 0.1, False)
+        return self._get_obs("Environment reset successfully.", "System initialized.", 0.01, False)
 
     def _get_obs(self, api_res: str, logs: str, reward: float, done: bool) -> Observation:
         if self.state_obj:
