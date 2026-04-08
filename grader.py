@@ -83,7 +83,7 @@ def grade_step(
         reward = max(state.system_health * 0.05, 1e-6)
 
     # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) ---
-    EPS = 1e-6
-    reward = max(EPS, min(reward, 1.0 - EPS))
+    EPS = 0.01
+    reward = max(EPS, min(reward, 0.99))
 
     return reward, done

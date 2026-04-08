@@ -93,10 +93,10 @@ def run_task(task_name: str, init_fn):
             done = False
 
         rewards.append(reward)
-        print(f"[STEP] step={step_count} action={action_str} reward={reward:.6f} done={str(done).lower()} error={error_msg}", flush=True)
+        print(f"[STEP] step={step_count} action={action_str} reward={reward} done={str(done).lower()} error={error_msg}", flush=True)
 
     success = done and any(r >= 0.9 for r in rewards)
-    rewards_str = ",".join(f"{r:.6f}" for r in rewards)
+    rewards_str = ",".join(str(r) for r in rewards)
     print(f"[END] success={str(success).lower()} steps={step_count} rewards={rewards_str}", flush=True)
 
 
