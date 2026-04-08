@@ -32,10 +32,10 @@ class Observation(BaseModel):
     @classmethod
     def clamp_reward(cls, v: float) -> float:
         """Ensure reward is STRICTLY in (0, 1) — never 0.0 or 1.0."""
-        EPS = 0.1
+        EPS = 1e-6
         if v is None:
             return EPS
-        return max(EPS, min(float(v), 0.99))
+        return max(EPS, min(float(v), 1.0 - EPS))
 
 class ServiceState(BaseModel):
     status: str = "up"

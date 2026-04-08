@@ -63,27 +63,27 @@ def grade_step(
     # --- Compute reward STRICTLY in (0.0, 1.0) ---
     if done:
         # Full recovery — higher if root cause was identified first
-        reward = 0.9 if root_cause_identified else 0.8
+        reward = 0.99 if root_cause_identified else 0.80
     elif action_is_incorrect:
         # Destructive or useless action — minimum nonzero penalty
-        reward = 0.1
+        reward = 0.01
     elif action_is_correct:
         if is_repeated:
             # Repeated correct action — diminishing returns
-            reward = 0.1
+            reward = 0.05
         else:
             # Escalating reward based on diagnostic progress
-            # First diagnosis: 0.2, second: 0.3, third: 0.4
-            base = 0.1 + (num_diagnosed * 0.1)
+            # First diagnosis: 0.15, second: 0.25, third: 0.35
+            base = 0.05 + (num_diagnosed * 0.10)
             # Root cause bonus
-            rca_bonus = 0.2 if root_cause_identified else 0.0
-            reward = min(base + rca_bonus, 0.7)
+            rca_bonus = 0.15 if root_cause_identified else 0.0
+            reward = min(base + rca_bonus, 0.70)
     else:
         # Neutral action — minimal signal
-        reward = max(state.system_health * 0.1, 0.1)
+        reward = max(state.system_health * 0.05, 1e-6)
 
-    # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) and exactly 1 decimal ---
-    EPS = 0.1
-    reward = round(max(EPS, min(reward, 0.9)), 1)
+    # --- FINAL SAFETY CLAMP: ensure strictly (0, 1) ---
+    EPS = 1e-6
+    reward = max(EPS, min(reward, 1.0 - EPS))
 
     return reward, done
