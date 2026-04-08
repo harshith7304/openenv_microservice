@@ -11,9 +11,9 @@ except ImportError:
     from tasks import task_easy, task_medium, task_hard
     from models import Action
 
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
 BENCHMARK = "openenv_microservices"
 MAX_STEPS = 8
 
@@ -41,7 +41,7 @@ Always respond with a single JSON object and nothing else."""
 
 
 def run_task(task_name: str, init_fn):
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
     env = OpenEnv(init_fn)
     obs = env.reset()
 
