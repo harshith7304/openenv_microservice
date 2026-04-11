@@ -47,4 +47,4 @@ The environment relies on structured JSON (Pydantic objects), eliminating free-f
 - **Medium**: `TBD` / `0.99`
 - **Hard**: `TBD` / `0.99`
 
-<!-- build trigger -->
+<!-- build trigger 6.0.1 -->
