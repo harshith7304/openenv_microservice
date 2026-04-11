@@ -1,8 +1,8 @@
-# Grading System
+﻿# Grading System
 
 ## Metrics
 
-* system_health (0–1)
+* system_health (0-1)
 * error_rate
 * success_rate
 
@@ -12,21 +12,21 @@
 
 ### Step Reward
 
-* correct action → +0.2
-* incorrect action → -0.1
+* correct action -> positive reward in `(0, 1)`
+* incorrect action -> minimum nonzero reward `0.01`
 
 ### Final Reward
 
-* system fully fixed → +1.0
-* partially fixed → +0.5
-* not fixed → 0
+* system fully fixed -> `0.99`
+* partially fixed -> `0.50`
+* not fixed -> `0.01`
 
 ---
 
 ## Penalties
 
-* redundant actions → -0.05
-* wrong root cause → -0.2
+* redundant actions -> low nonzero reward
+* wrong root cause -> minimum nonzero reward
 
 ---
 
@@ -42,4 +42,4 @@ done = True if:
 ## Determinism
 
 * no randomness
-* same input → same output
+* same input -> same output

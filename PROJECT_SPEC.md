@@ -1,4 +1,4 @@
-# API Debugging Environment — OpenEnv Spec
+﻿# API Debugging Environment - OpenEnv Spec
 
 ## Objective
 
@@ -80,7 +80,7 @@ Structured JSON:
 ### Task 1 (Easy)
 
 Bug: wrong DB config
-Goal: fix config → system works
+Goal: fix config -> system works
 
 ### Task 2 (Medium)
 
@@ -96,10 +96,10 @@ Goal: identify root cause and stabilize system
 
 ## Reward Design
 
-* correct fix → +1.0
-* partial fix → +0.5
-* wrong action → -0.2
-* unnecessary steps → small penalty
+* correct fix -> `0.99`
+* partial fix -> `0.50`
+* wrong action -> `0.01`
+* unnecessary steps -> small nonzero penalty
 
 ---
 

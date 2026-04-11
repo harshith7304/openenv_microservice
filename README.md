@@ -1,4 +1,4 @@
----
+﻿---
 title: Openenv Microservice
 emoji: ⚙️
 colorFrom: blue
@@ -9,10 +9,10 @@ app_port: 8000
 # OpenEnv: Microservice Debugging Environment
 
 ## Environment Description & Motivation
-This environment simulates a real-world backend microservice system containing a Database, an Authentication service, and a Payment service. The motivation is to test an autonomous AI DevOps/SRE agent’s ability to perform root cause analysis and correctly recover system failures without human intervention. This directly models the genuine real-world task of incident response and site reliability engineering (SRE).
+This environment simulates a real-world backend microservice system containing a Database, an Authentication service, and a Payment service. The motivation is to test an autonomous AI DevOps/SRE agent's ability to perform root cause analysis and correctly recover system failures without human intervention. This directly models the real-world task of incident response and site reliability engineering (SRE).
 
 ## Action and Observation Space Definitions
-The environment strictly strictly relies on structured JSON (Pydantic objects), eliminating free-form text hallucinations. 
+The environment relies on structured JSON (Pydantic objects), eliminating free-form text hallucinations.
 
 ### Action Space:
 - **`action_type`**: Must be one of `call_api`, `inspect_logs`, `restart_service`, `update_config`, `check_status`.
@@ -25,7 +25,7 @@ The environment strictly strictly relies on structured JSON (Pydantic objects), 
 - **`service_status`**: A dictionary indicating whether each dependency in the chain is strictly `up` or `down`.
 
 ## Task Descriptions (Difficulty Range)
-1. **Task 1: Config Bug (Easy)** 
+1. **Task 1: Config Bug (Easy)**
    - **Scenario**: Database URL has been mistakenly replaced with an invalid string.
    - **Goal**: Identify the wrong URL, apply `update_config` with the correct URL string.
 2. **Task 2: Auth Failure (Medium)**
@@ -41,10 +41,12 @@ The environment strictly strictly relies on structured JSON (Pydantic objects), 
 3. To validate against the standard OpenEnv protocols: `openenv validate`.
 4. Optionally, start up the environment server natively using: `uv run server`.
 5. Execute an agent evaluating all three tasks: `python inference.py`.
-   - Ensure you `export API_KEY=your_key` and define your preferred `MODEL_NAME` (e.g., `gpt-4o-mini`).
+   - Ensure you export your API key and define your preferred `MODEL_NAME`.
 
 ## Baseline Scores
-*Baseline scores are generated automatically upon successful inference run.*
-- **Easy**: `TBD` / 1.0
-- **Medium**: `TBD` / 1.0
-- **Hard**: `TBD` / 1.0
+*Baseline scores are generated automatically upon successful inference run and remain strictly inside `(0, 1)`.*
+- **Easy**: `TBD` / `0.99`
+- **Medium**: `TBD` / `0.99`
+- **Hard**: `TBD` / `0.99`
+
+<!-- build trigger -->

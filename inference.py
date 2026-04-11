@@ -95,9 +95,20 @@ def run_task(task_name: str, init_fn):
         rewards.append(reward)
         print(f"[STEP] step={step_count} action={action_str} reward={reward} done={str(done).lower()} error={error_msg}", flush=True)
 
+    # Compute a continuous task score strictly in (0, 1)
+    # The evaluator checks that task scores are strictly between 0 and 1
+    # (not 0.0 and not 1.0), so we must never emit exactly 0.0 or 1.0.
+    if rewards:
+        task_score = max(rewards)  # Use the best reward achieved
+    else:
+        task_score = 0.01  # Fallback: minimum nonzero
+
+    # STRICT CLAMP: ensure task_score is in open interval (0, 1)
+    task_score = round(max(0.01, min(task_score, 0.99)), 4)
+
     success = done and any(r >= 0.9 for r in rewards)
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={step_count} rewards={rewards_str}", flush=True)
+    print(f"[END] task={task_name} success={str(success).lower()} score={task_score} steps={step_count} rewards={rewards_str}", flush=True)
 
 
 if __name__ == "__main__":
