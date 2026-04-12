@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Dict, Optional, Literal, Any
 
-ServiceType = Literal["database", "auth", "payment"]
+ServiceType = Literal["database", "auth", "payment", "all"]
 ActionType = Literal[
     "call_api",
     "inspect_logs",

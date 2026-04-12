@@ -30,14 +30,18 @@ Expected Solution:
 
 Initial State:
 
-* DB slow response
-* auth retry loop
-* payment timeout
+* All services are UP but degraded (high latency + error rates)
+* Payment has a bad deployment artifact causing cascading memory pressure
+* Database has a secondary config drift (pool_mode) that must be fixed after rollback
 
 Expected Solution:
 
-* fix DB config
-* stabilize system
+* check_status(all) to observe degraded pattern
+* inspect_logs(payment) to identify bad deployment
+* rollback_deployment(payment) first (strict ordering)
+* inspect_logs(database) to find drift key
+* update_config(database, pool_mode, safe)
+* check_status(all) to verify recovery
 
 ---
 

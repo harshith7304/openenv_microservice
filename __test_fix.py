@@ -3,16 +3,25 @@ Simulates what happens when LLM API is unavailable (no HF_TOKEN).
 """
 import sys
 import re
+from pathlib import Path
 
 # Simulate inference.py without LLM by temporarily overriding os env
 import os
 os.environ.pop("HF_TOKEN", None)  # Remove HF_TOKEN to force API errors
 
 # Import the environment directly  
-sys.path.insert(0, r"c:\Users\harsh\OneDrive\Desktop\meta_openenv")
-from environment import OpenEnv
-from tasks import task_easy, task_medium, task_hard
-from models import Action
+repo_root = str(Path(__file__).resolve().parent.parent)
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
+try:
+    from openenv_microservice.environment import OpenEnv
+    from openenv_microservice.tasks import task_easy, task_medium, task_hard
+    from openenv_microservice.models import Action
+except ImportError:
+    from environment import OpenEnv
+    from tasks import task_easy, task_medium, task_hard
+    from models import Action
 
 # Simulate a task run WITHOUT the LLM (which is what happens during eval if API fails)
 def simulate_task(task_name, init_fn):
@@ -37,9 +46,13 @@ def simulate_task(task_name, init_fn):
         ]
     elif task_name == "task_hard":
         actions = [
+            Action(action_type="check_status", service="all"),
+            Action(action_type="inspect_logs", service="payment"),
             Action(action_type="inspect_logs", service="database"),
-            Action(action_type="inspect_logs", service="auth"),
-            Action(action_type="update_config", service="database", key="url", value="valid_db_url"),
+            Action(action_type="rollback_deployment", service="payment"),
+            Action(action_type="inspect_logs", service="database"),
+            Action(action_type="update_config", service="database", key="pool_mode", value="safe"),
+            Action(action_type="check_status", service="all"),
         ]
     else:
         actions = []
