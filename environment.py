@@ -73,12 +73,21 @@ class OpenEnv(BaseEnvironment):
         self.diagnosed_services: set[str] = set()
         self.root_cause_identified: bool = False
 
+        # --- Hard-task phase tracking (deterministic, session-scoped) ---
+        self._hard_saw_all_status: bool = False
+        self._hard_saw_payment_deploy_evidence: bool = False
+        self._hard_saw_db_drift_isolated: bool = False
+
     def reset(self) -> Observation:
         self.state_obj = self.init_state_fn()
         self._internal_state = OpenEnvStateType(episode_id=str(uuid4()), step_count=0)
         self.action_history = []
         self.diagnosed_services = set()
         self.root_cause_identified = False
+
+        self._hard_saw_all_status = False
+        self._hard_saw_payment_deploy_evidence = False
+        self._hard_saw_db_drift_isolated = False
         return self._get_obs("Environment reset successfully.", "System initialized.", 0.01, False)
 
     def _get_obs(self, api_res: str, logs: str, reward: float, done: bool) -> Observation:
@@ -118,33 +127,107 @@ class OpenEnv(BaseEnvironment):
         logs = ""
 
         # ============================================================
+        # HARD TASK: deterministic degradation tick while bad deploy runs
+        # ============================================================
+        if self.state_obj.task_name == "task_hard":
+            payment_deploy = self.state_obj.services["payment"].config.get("deployment")
+            if payment_deploy == "bad":
+                # Simulate memory pressure / latency creep across the stack
+                for svc_name in ("payment", "auth", "database"):
+                    m = self.state_obj.services[svc_name].metrics
+                    m["memory_mb"] = float(m.get("memory_mb", 0.0)) + 75.0
+                    m["latency"] = float(m.get("latency", 0.0)) + 150.0
+                    m["error_rate"] = min(0.99, float(m.get("error_rate", 0.0)) + 0.02)
+
+        # ============================================================
         # ACTION: update_config
         # ============================================================
         if action.action_type == "update_config":
-            if action.service == "database" and action.key == "url" and action.value == "valid_db_url":
-                if not self.root_cause_identified:
-                    action_is_incorrect = True
-                    api_res = "Config update applied, but without prior diagnosis this is a blind fix."
-                    logs = "WARNING: You updated config without inspecting logs first. SRE protocol violation."
-                    self.state_obj.services["database"].config["url"] = "valid_db_url"
-                    self.state_obj.services["database"].metrics["latency"] = 10.0
+            if action.service == "database":
+                # --- Hard task has a DISTINCT config drift key to fix ---
+                if self.state_obj.task_name == "task_hard":
+                    if action.key == "pool_mode" and action.value == "safe":
+                        if not self.root_cause_identified:
+                            action_is_incorrect = True
+                            api_res = "Config update rejected: blind fix without diagnosis."
+                            logs = "WARNING: Attempted DB drift fix without diagnosing the incident first."
+                            self.state_obj.services["database"].config["pool_mode"] = "corrupt"
+                        elif self.state_obj.services["payment"].config.get("deployment") == "bad":
+                            # Sequencing enforcement: bad payment binary will overwrite DB config on restart loop
+                            action_is_incorrect = True
+                            api_res = "Config update failed: value keeps getting overwritten."
+                            logs = (
+                                "ERROR: database.pool_mode was updated, but the payment service (bad deployment) "
+                                "overwrote it again during its crash/restart loop. Stop the upstream churn, then retry the drift correction."
+                            )
+                            self.state_obj.services["database"].config["pool_mode"] = "corrupt"
+                        elif not self._hard_saw_db_drift_isolated:
+                            action_is_incorrect = True
+                            api_res = "Config update rejected: missing phase-2 evidence."
+                            logs = "WARNING: Confirm the drift is isolated (inspect database logs after stabilizing payment) before applying the config correction."
+                            self.state_obj.services["database"].config["pool_mode"] = "corrupt"
+                        else:
+                            self.state_obj.services["database"].config["pool_mode"] = "safe"
+                            # Stabilize DB + downstream after drift fix
+                            self.state_obj.services["database"].metrics.update({"latency": 80.0, "error_rate": 0.10, "memory_mb": 500.0})
+                            self.state_obj.services["auth"].metrics.update({"latency": 120.0, "error_rate": 0.10, "memory_mb": 600.0})
+                            self.state_obj.services["payment"].metrics.update({"latency": 180.0, "error_rate": 0.10, "memory_mb": 650.0})
+                            action_is_correct = True
+                            api_res = "Config updated: database.pool_mode = safe"
+                            logs = "DB drift corrected. System appears stable; run check_status(all) to verify recovery."
+                    elif action.key == "url" and action.value == "valid_db_url":
+                        action_is_incorrect = True
+                        api_res = "Config update not applicable."
+                        logs = "INFO: database.url appears healthy for this incident. Look for effects of a recent release and a secondary DB config drift (pool_mode)."
+                    else:
+                        action_is_incorrect = True
+                        api_res = f"Config update rejected: invalid key/value for {action.service}."
+                        logs = f"Expected: database.pool_mode=safe (hard) or database.url=valid_db_url (easy), got: {action.service}.{action.key}={action.value}"
+
+                # --- Easy task: classic DB URL fix ---
+                elif action.key == "url" and action.value == "valid_db_url":
+                    if not self.root_cause_identified:
+                        action_is_incorrect = True
+                        api_res = "Config update applied, but without prior diagnosis this is a blind fix."
+                        logs = "WARNING: You updated config without inspecting logs first. SRE protocol violation."
+                        self.state_obj.services["database"].config["url"] = "valid_db_url"
+                        self.state_obj.services["database"].metrics["latency"] = 10.0
+                    else:
+                        self.state_obj.services["database"].config["url"] = "valid_db_url"
+                        self.state_obj.services["database"].metrics["latency"] = 10.0
+                        action_is_correct = True
+                        api_res = "Config updated: database.url = valid_db_url"
+                        logs = "DB config accepted. Latency normalized. Service attempting restart."
                 else:
-                    self.state_obj.services["database"].config["url"] = "valid_db_url"
-                    self.state_obj.services["database"].metrics["latency"] = 10.0
-                    action_is_correct = True
-                    api_res = "Config updated: database.url = valid_db_url"
-                    logs = "DB config accepted. Latency normalized. Service attempting restart."
+                    action_is_incorrect = True
+                    api_res = f"Config update rejected: invalid key/value for {action.service}."
+                    logs = f"Expected: database.url=valid_db_url, got: {action.service}.{action.key}={action.value}"
             else:
                 action_is_incorrect = True
                 api_res = f"Config update rejected: invalid key/value for {action.service}."
-                logs = f"Expected: database.url=valid_db_url, got: {action.service}.{action.key}={action.value}"
+                logs = f"Expected: database.url=valid_db_url or database.pool_mode=safe, got: {action.service}.{action.key}={action.value}"
 
         # ============================================================
         # ACTION: rollback_deployment
         # ============================================================
         elif action.action_type == "rollback_deployment":
             svc = action.service
-            if svc == "database":
+            if svc == "payment" and self.state_obj.task_name == "task_hard":
+                if not self.root_cause_identified:
+                    action_is_incorrect = True
+                    api_res = "Rollback rejected."
+                    logs = "WARNING: Blind rollback attempted without correlating status sweep + deployment evidence."
+                else:
+                    self.state_obj.services["payment"].config["deployment"] = "stable"
+                    # Partial recovery: memory pressure drops, but DB drift still breaks stability
+                    self.state_obj.services["payment"].metrics.update({"latency": 900.0, "error_rate": 0.30, "memory_mb": 700.0})
+                    self.state_obj.services["auth"].metrics.update({"latency": 1400.0, "error_rate": 0.35, "memory_mb": 850.0})
+                    self.state_obj.services["database"].metrics.update({"latency": 1700.0, "error_rate": 0.40, "memory_mb": 900.0})
+                    action_is_correct = True
+                    api_res = "Deployment rolled back to previous stable version."
+                    logs = "Rollback successful for payment. Memory pressure reduced; database drift remains to be fixed."
+
+            elif svc == "database":
                 if not self.root_cause_identified:
                     action_is_incorrect = True
                     api_res = "Rollback rejected."
@@ -244,6 +327,20 @@ class OpenEnv(BaseEnvironment):
         elif action.action_type == "inspect_logs":
             svc = action.service
 
+            if svc == "all":
+                action_is_incorrect = True
+                api_res = "Unknown service."
+                logs = "inspect_logs does not support service='all'. Use check_status(all) for a broad sweep, then inspect_logs on a specific service."
+                reward, done = grade_step(
+                    state=self.state_obj,
+                    action_is_correct=False,
+                    action_is_incorrect=True,
+                    root_cause_identified=self.root_cause_identified,
+                    num_diagnosed=len(self.diagnosed_services),
+                    is_repeated=is_repeated,
+                )
+                return self._get_obs(api_res, logs, reward, done)
+
             if self.state_obj.task_name == "task_easy":
                 if svc == "database":
                     action_is_correct = True
@@ -277,24 +374,49 @@ class OpenEnv(BaseEnvironment):
                     core_log = f"INFO: {svc} logs nominal."
 
             elif self.state_obj.task_name == "task_hard":
-                if svc == "database":
+                if svc == "payment":
+                    action_is_correct = True
+                    self.diagnosed_services.add("payment")
+                    # Phase 1 evidence: deployment artifact signature
+                    self._hard_saw_payment_deploy_evidence = True
+                    deployed_at = "2026-04-12T09:14:27Z"
+                    build_id = "pay-2.7.13-bad"
+                    core_log = (
+                        f"CRITICAL: Release marker observed for payment: build={build_id} deployed_at={deployed_at}. "
+                        "Heap usage is trending upward with frequent GC cycles and growing request queue depth. "
+                        "Symptoms began within minutes of this release and correlate with system-wide latency/error spikes."
+                    )
+                    # Root cause gate: requires BOTH broad status sweep and deploy evidence
+                    if self._hard_saw_all_status:
+                        self.root_cause_identified = True
+
+                elif svc == "database":
                     action_is_correct = True
                     self.diagnosed_services.add("database")
                     lat = self.state_obj.services["database"].metrics.get("latency", 0)
-                    url = self.state_obj.services["database"].config.get("url")
-                    core_log = f"WARN: DB query latency={lat}ms (threshold=100ms). Config URL='{url}'. Auth service retry storm detected. ROOT CAUSE: invalid DB URL causing connection pool exhaustion."
-                    if "auth" in self.diagnosed_services:
-                        self.root_cause_identified = True
+                    pool_mode = self.state_obj.services["database"].config.get("pool_mode")
+                    payment_deploy = self.state_obj.services["payment"].config.get("deployment")
+                    if payment_deploy == "bad":
+                        core_log = (
+                            f"WARN: DB latency={lat}ms. Observed drift in a runtime config value: pool_mode='{pool_mode}'. "
+                            "There are repeated write attempts during the payment crash/restart loop, and the value flips back intermittently. "
+                            "If you try to correct this while upstream churn continues, the change may not persist."
+                        )
+                    else:
+                        self._hard_saw_db_drift_isolated = True
+                        core_log = (
+                            f"WARN: DB latency={lat}ms. pool_mode is still '{pool_mode}', but upstream churn has stopped and the value is now stable. "
+                            "This looks like an isolated drift that should be safe to correct."
+                        )
+
                 elif svc == "auth":
                     action_is_correct = True
                     self.diagnosed_services.add("auth")
-                    core_log = "ERROR: Auth retry loop — 5000 retries/sec against slow DB. Memory pressure building. Payment gateway timeout cascade imminent."
-                    if "database" in self.diagnosed_services:
-                        self.root_cause_identified = True
-                elif svc == "payment":
-                    action_is_correct = True
-                    self.diagnosed_services.add("payment")
-                    core_log = "ERROR: Payment service timeout. All transactions failing. Upstream auth dependency unresponsive."
+                    mem = self.state_obj.services["auth"].metrics.get("memory_mb", 0)
+                    core_log = (
+                        f"ERROR: Auth degraded. memory_mb={mem}. Elevated error rate due to upstream instability. "
+                        "Symptoms consistent with cascading pressure from another service (not an auth config issue)."
+                    )
                 else:
                     core_log = f"INFO: {svc} logs nominal."
 
@@ -306,11 +428,43 @@ class OpenEnv(BaseEnvironment):
         # ============================================================
         elif action.action_type == "check_status":
             svc = action.service
-            if svc in self.state_obj.services:
+            if svc == "all":
+                parts: list[str] = []
+                any_bad = False
+                for name, svc_state in self.state_obj.services.items():
+                    st = svc_state.status
+                    lat = svc_state.metrics.get("latency", 0)
+                    err = svc_state.metrics.get("error_rate", 0)
+                    mem = svc_state.metrics.get("memory_mb", 0)
+                    parts.append(f"{name}: status={st}, latency={lat}ms, error_rate={err}, memory_mb={mem}")
+                    if st == "down" or lat > 1000 or err > 0.5:
+                        any_bad = True
+                api_res = "\n".join(parts)
+                logs = "Health sweep complete for all services."
+                if any_bad:
+                    action_is_correct = True
+
+                if self.state_obj.task_name == "task_hard":
+                    # Phase 1 gate evidence
+                    self._hard_saw_all_status = True
+                    # Order-independent RCA gate (requires BOTH observations)
+                    if self._hard_saw_payment_deploy_evidence:
+                        self.root_cause_identified = True
+                    # Phase 3 verification latch
+                    payment_stable = self.state_obj.services["payment"].config.get("deployment") == "stable"
+                    pool_ok = self.state_obj.services["database"].config.get("pool_mode") == "safe"
+                    verified = float(self.state_obj.services["payment"].metrics.get("verified", 0.0)) >= 1.0
+                    if payment_stable and pool_ok and not verified:
+                        self.state_obj.services["payment"].metrics["verified"] = 1.0
+                        logs += " Verification recorded: system observed stable post-fix."
+                        action_is_correct = True
+
+            elif svc in self.state_obj.services:
                 st = self.state_obj.services[svc].status
                 lat = self.state_obj.services[svc].metrics.get("latency", 0)
                 err = self.state_obj.services[svc].metrics.get("error_rate", 0)
-                api_res = f"{svc}: status={st}, latency={lat}ms, error_rate={err}"
+                mem = self.state_obj.services[svc].metrics.get("memory_mb", 0)
+                api_res = f"{svc}: status={st}, latency={lat}ms, error_rate={err}, memory_mb={mem}"
                 logs = f"Health check complete for {svc}."
                 if st == "down" or lat > 1000 or err > 0.5:
                     action_is_correct = True
@@ -323,13 +477,18 @@ class OpenEnv(BaseEnvironment):
         # ACTION: call_api
         # ============================================================
         elif action.action_type == "call_api":
-            health = self.state_obj.system_health
-            if health < 0.5:
-                api_res = "500 Internal Server Error — system health critical."
-                logs = f"API call to {action.service}{('/' + action.endpoint) if action.endpoint else ''} failed."
+            if action.service == "all":
+                action_is_incorrect = True
+                api_res = "Unknown service."
+                logs = "call_api does not support service='all'."
             else:
-                api_res = "200 OK"
-                logs = f"API call to {action.service}{('/' + action.endpoint) if action.endpoint else ''} succeeded."
+                health = self.state_obj.system_health
+                if health < 0.5:
+                    api_res = "500 Internal Server Error — system health critical."
+                    logs = f"API call to {action.service}{('/' + action.endpoint) if action.endpoint else ''} failed."
+                else:
+                    api_res = "200 OK"
+                    logs = f"API call to {action.service}{('/' + action.endpoint) if action.endpoint else ''} succeeded."
 
         else:
             action_is_incorrect = True

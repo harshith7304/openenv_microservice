@@ -13,8 +13,8 @@ This environment simulates a real-world backend microservice system containing a
 The environment relies on structured JSON (Pydantic objects), eliminating free-form text hallucinations.
 
 ### Action Space:
-- **`action_type`**: Must be one of `call_api`, `inspect_logs`, `restart_service`, `update_config`, `check_status`.
-- **`service`**: The target service to act upon (`database`, `auth`, `payment`).
+- **`action_type`**: Must be one of `call_api`, `inspect_logs`, `restart_service`, `update_config`, `check_status`, `rollback_deployment`.
+- **`service`**: The target service to act upon (`database`, `auth`, `payment`). For `check_status`, `service` may also be `all`.
 - **`endpoint`, `key`, `value`**: Optional string parameters used contextually when calling endpoints or updating configurations.
 
 ### Observation Space:
@@ -30,16 +30,22 @@ The environment relies on structured JSON (Pydantic objects), eliminating free-f
    - **Scenario**: The Auth service has crashed abruptly due to a memory exception.
    - **Goal**: Restart the auth service while not accidentally disrupting the database or payment stability.
 3. **Task 3: Cascading Failure (Hard)**
-   - **Scenario**: Database experiences extreme latency, pushing the Auth service into an infinite retry loop, ultimately bringing down the Payment processing gateway.
-   - **Goal**: Diagnose the underlying DB configuration flaw causing the latency, update it, and bring all cascaded services consistently back online. Requires multi-step stabilization.
+   - **Scenario**: A recent bad deployment of the Payment service causes cascading memory pressure and high latency across Auth + Database. During the crash/restart loop it also corrupts a secondary database configuration value.
+   - **Goal**: Perform a broad sweep with `check_status(all)`, identify the bad deployment via `inspect_logs(payment)`, rollback the Payment deployment, then fix the isolated DB config drift (`update_config(database, pool_mode, safe)`), and finally verify recovery with `check_status(all)`.
 
 ## Setup and Usage Instructions
 1. Clone the repository natively.
 2. Install dependencies: `pip install -r requirements.txt`.
 3. To validate against the standard OpenEnv protocols: `openenv validate`.
 4. Optionally, start up the environment server natively using: `uv run server`.
-5. Execute an agent evaluating all three tasks: `python inference.py`.
+5. Execute an agent evaluating all three tasks:
+   - From the repo root (the folder that contains `openenv_microservice/`): `python -m openenv_microservice.inference`
+   - Or from inside `openenv_microservice/`: `python inference.py`
    - Ensure you export your API key and define your preferred `MODEL_NAME`.
+
+### Local sanity checks
+- From the repo root: `python -m openenv_microservice.__test_fix`
+- Or from inside `openenv_microservice/`: `python __test_fix.py`
 
 ## Baseline Scores
 *Baseline scores are generated automatically upon successful inference run and remain strictly inside `(0, 1)`.*

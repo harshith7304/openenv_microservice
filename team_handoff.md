@@ -31,7 +31,7 @@ When something breaks, errors cascade exactly like in real production systems.
 |------|-----------|----------|-----------------|
 | **task_easy** | Easy | Database URL is wrong (`invalid_url_123`) -> all services down | `inspect_logs(database)` -> `update_config(database, url, valid_db_url)` |
 | **task_medium** | Medium | Auth crashed (OOM). DB is fine. Payment blocked. | `inspect_logs(auth)` -> `restart_service(auth)` |
-| **task_hard** | Hard | Bad DB URL -> 5000ms latency -> auth retry storm -> payment cascade | `inspect_logs(payment)` -> `inspect_logs(auth)` -> `inspect_logs(database)` -> `update_config(database, url, valid_db_url)` |
+| **task_hard** | Hard | Bad payment deployment causes cascading memory pressure; also corrupts a DB drift key | `check_status(all)` -> `inspect_logs(payment)` -> `rollback_deployment(payment)` -> `inspect_logs(database)` -> `update_config(database, pool_mode, safe)` -> `check_status(all)` |
 
 ### Baseline Results
 ```

@@ -25,18 +25,20 @@ The system has 3 services: database, auth, payment.
 - payment depends on auth and database
 
 Available actions (respond ONLY with valid JSON, no explanation):
-- {"action_type": "check_status", "service": "<database|auth|payment>"}
+- {"action_type": "check_status", "service": "<database|auth|payment|all>"}
 - {"action_type": "inspect_logs", "service": "<database|auth|payment>"}
 - {"action_type": "restart_service", "service": "<database|auth|payment>"}
 - {"action_type": "update_config", "service": "database", "key": "url", "value": "valid_db_url"}
-- {"action_type": "rollback_deployment", "service": "database"}
+- {"action_type": "update_config", "service": "database", "key": "pool_mode", "value": "safe"}
+- {"action_type": "rollback_deployment", "service": "<database|payment>"}
 - {"action_type": "call_api", "service": "<database|auth|payment>", "endpoint": "<optional>"}
 
 Strategy:
-1. First inspect_logs on broken services to identify root cause
-2. Apply the correct fix (update_config, rollback_deployment, OR restart_service)
-3. Verify by checking status again
-4. Done when all services are up and system_health > 0.9
+1. Start with check_status(all) to get a broad sweep if the incident is unclear
+2. Use inspect_logs on the most suspicious service(s) to identify root cause
+3. Apply the correct fix (update_config, rollback_deployment, OR restart_service)
+4. Verify by checking status again (often check_status(all))
+5. Done when all services are up and system_health > 0.9
 
 Always respond with a single JSON object and nothing else."""
 

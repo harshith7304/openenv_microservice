@@ -42,19 +42,28 @@ def grade_step(
             state.system_health = 0.3
 
     elif state.task_name == "task_hard":
-        db_url_ok = state.services["database"].config.get("url") == "valid_db_url"
-        db_lat_ok = state.services["database"].metrics.get("latency", 9999) < 100
-        if db_url_ok and db_lat_ok:
-            state.services["database"].metrics["latency"] = 10.0
-            state.services["auth"].metrics["latency"] = 10.0
+        payment_stable = state.services["payment"].config.get("deployment") == "stable"
+        pool_ok = state.services["database"].config.get("pool_mode") == "safe"
+        verified = float(state.services["payment"].metrics.get("verified", 0.0)) >= 1.0
+
+        if payment_stable and pool_ok and verified:
+            # Full recovery after explicit verification
             state.services["database"].status = "up"
             state.services["auth"].status = "up"
             state.services["payment"].status = "up"
+            state.services["database"].metrics.update({"latency": 30.0, "error_rate": 0.01})
+            state.services["auth"].metrics.update({"latency": 35.0, "error_rate": 0.01})
+            state.services["payment"].metrics.update({"latency": 40.0, "error_rate": 0.01})
             state.system_health = 0.99
-        elif db_url_ok:
-            state.system_health = 0.5
+        elif payment_stable and pool_ok:
+            # Fixes applied but not yet verified (verification is REQUIRED for done)
+            state.system_health = 0.85
+        elif payment_stable:
+            # Rollback helped, but drift remains
+            state.system_health = 0.50
         else:
-            state.system_health = 0.1
+            # Bad deployment still running
+            state.system_health = 0.10
 
     # --- Check episode done condition ---
     all_operational = all(s.status == "up" for s in state.services.values())
